@@ -1,6 +1,10 @@
+import os
+
 from chromatic_tda import ChromaticAlphaComplex, plot_six_pack, plot_labeled_point_set
 import numpy as np
 from matplotlib import pyplot as plt
+
+from chromatic_tda.utils.timing import TimingUtils
 
 
 def run_test():
@@ -39,24 +43,19 @@ def run_test_plot():
 
 def main():
     # run_test_plot()
+    np.random.seed(0)
     points = np.random.random((50, 2))
     labels = list(map(int, 2 * np.random.random(len(points))))
-    plot_labeled_point_set(points, labels)
+    # plot_labeled_point_set(points, labels)
 
-    cplx = ChromaticAlphaComplex(points, labels).get_simplicial_complex(sub_complex='mono-chromatic')
+    TimingUtils(log_times=True).flush()
+
+    cplx = ChromaticAlphaComplex(points, labels, multi_process=8).get_simplicial_complex(sub_complex='mono-chromatic')
+
+    TimingUtils().print()
+
     plot_six_pack(cplx)
-
-    cplx_torus = ChromaticAlphaComplex(points, labels,
-                                       torus=True, xrange=(0, 1), yrange=(0, 1),
-                                       ).get_simplicial_complex(sub_complex='mono-chromatic')
-    plot_six_pack(cplx_torus)
-
-
-
-
     plt.show()
-
-
 
 
 if __name__ == "__main__":

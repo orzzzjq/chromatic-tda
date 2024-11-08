@@ -24,7 +24,8 @@ class CoreChromaticAlphaComplexFactory:
     def create_instance(self, lift_perturbation: Optional[float],
                         point_perturbation: Optional[float],
                         use_morse_optimization: bool = True,
-                        legacy_radius_function: bool = False) -> CoreChromaticAlphaComplex:
+                        legacy_radius_function: bool = False,
+                        multi_process: int = 0) -> CoreChromaticAlphaComplex:
         """
         Compute the chromatic alpha complex of given points and labels.
         """
@@ -35,7 +36,8 @@ class CoreChromaticAlphaComplexFactory:
         self.init_labels(self.labels)
         self.build_alpha_complex_structure(lift_perturbation=lift_perturbation)
         self.add_radius_function(use_morse_optimization=use_morse_optimization,
-                                 legacy_radius_function=legacy_radius_function)
+                                 legacy_radius_function=legacy_radius_function,
+                                 multi_process=multi_process)
         TimingUtils().start("AlphFac :: Create Alf Instance")
 
         return self.alpha_complex
@@ -128,12 +130,15 @@ class CoreChromaticAlphaComplexFactory:
 
         return pts_lift
 
-    def add_radius_function(self, use_morse_optimization: bool, legacy_radius_function: bool):
+    def add_radius_function(self,
+                            use_morse_optimization: bool,
+                            legacy_radius_function: bool,
+                            multi_process: int):
         if legacy_radius_function:
             LegacyRadiusFunctionUtils().compute_radius_function(self.alpha_complex)
         else:
             sq_radius_function = RadiusFunctionConstructor.construct_sq_radius_function(
-                self.alpha_complex, use_morse_optimization=use_morse_optimization)
+                self.alpha_complex, use_morse_optimization=use_morse_optimization, multi_process=multi_process)
             self.alpha_complex.simplicial_complex.set_simplex_weights(
                 {simplex: np.sqrt(rad2) for simplex, rad2 in sq_radius_function.items()})
 

@@ -12,35 +12,65 @@ from chromatic_tda.utils.floating_point_utils import FloatingPointUtils
 from chromatic_tda.utils.geometry_utils import GeometryUtils
 from chromatic_tda.utils.timing import TimingUtils
 
+from multiprocessing import Pool, Manager
 
 class RadiusFunctionConstructor:
     @staticmethod
     def construct_sq_radius_function(alpha_complex: CoreChromaticAlphaComplex,
-                                     use_morse_optimization: bool) -> dict[tuple[int, ...], float]:
+                                     use_morse_optimization: bool,
+                                     multi_process: int) -> dict[tuple[int, ...], float]:
         TimingUtils().start("Rad :: Construct Radius Function")
 
         radius_function = {}
-        for dim in range(alpha_complex.simplicial_complex.dimension, 0, -1):
-            simplices: set[tuple[int, ...]] = alpha_complex.simplicial_complex.dim_simplex_dict[dim]
-            for simplex in simplices:
-                if radius_function.get(simplex, None) is not None:
-                    continue  # if radius already found at an earlier step, skip the simplex
-                circumstack = RadiusFunctionConstructor.find_smallest_circumstack_of_simplex(
-                    alpha_complex, simplex)
-                extra_vertices = alpha_complex.simplicial_complex.get_extra_vertices_of_cofaces(simplex)
-                if RadiusFunctionConstructor.is_stack_empty_of_vertices(alpha_complex, extra_vertices, circumstack):
-                    radius_function[simplex] = circumstack.maximum_radius
-                    if use_morse_optimization:
-                        RadiusFunctionConstructor.morse_optimization_fill_in_interval(radius_function, alpha_complex,
-                                                                                      simplex, circumstack)
-                else:
-                    co_faces = alpha_complex.simplicial_complex.co_boundary[simplex]
-                    radius_function[simplex] = min(radius_function[co_face] for co_face in co_faces)
+
+        if not multi_process: # sequential
+            radius_function = {}
+            for dim in range(alpha_complex.simplicial_complex.dimension, 0, -1):
+                simplices: set[tuple[int, ...]] = alpha_complex.simplicial_complex.dim_simplex_dict[dim]
+                for simplex in simplices:
+                    if radius_function.get(simplex, None) is not None:
+                        continue  # if radius already found at an earlier step, skip the simplex
+                    circumstack = RadiusFunctionConstructor.find_smallest_circumstack_of_simplex(
+                        alpha_complex, simplex)
+                    extra_vertices = alpha_complex.simplicial_complex.get_extra_vertices_of_cofaces(simplex)
+                    if RadiusFunctionConstructor.is_stack_empty_of_vertices(alpha_complex, extra_vertices, circumstack):
+                        radius_function[simplex] = circumstack.maximum_radius
+                        if use_morse_optimization:
+                            RadiusFunctionConstructor.morse_optimization_fill_in_interval(radius_function, alpha_complex,
+                                                                                          simplex, circumstack)
+                    else:
+                        co_faces = alpha_complex.simplicial_complex.co_boundary[simplex]
+                        radius_function[simplex] = min(radius_function[co_face] for co_face in co_faces)
+
+        else: # multiprocessing
+            for dim in range(alpha_complex.simplicial_complex.dimension, 0, -1):
+                simplices: set[tuple[int, ...]] = alpha_complex.simplicial_complex.dim_simplex_dict[dim]
+                simplices = set(filter(lambda simplex: radius_function.get(simplex, None) is None, simplices))
+                raw_data = [RadiusFunctionConstructor.prepare_raw_data(alpha_complex, simplex) for simplex in simplices]
+                TimingUtils().start("Parallel :: Real Computation")
+                with Manager() as manager:
+                    with manager.Pool(multi_process) as pool:
+                        circumstacks = pool.starmap(RadiusFunctionConstructor.find_smallest_circumstack_of_point_set, raw_data)
+                TimingUtils().stop("Parallel :: Real Computation")
+                for i, simplex in enumerate(simplices):
+                    extra_vertices = alpha_complex.simplicial_complex.get_extra_vertices_of_cofaces(simplex)
+                    if RadiusFunctionConstructor.is_stack_empty_of_vertices(alpha_complex, extra_vertices, circumstacks[i]):
+                        radius_function[simplex] = circumstacks[i].maximum_radius
+                        TimingUtils().start("KKT :: Dual Computation")
+                        if use_morse_optimization:
+                            RadiusFunctionConstructor.morse_optimization_fill_in_interval(radius_function, alpha_complex,
+                                                                                          simplex, circumstacks[i])
+                        TimingUtils().stop("KKT :: Dual Computation")
+                    else:
+                        co_faces = alpha_complex.simplicial_complex.co_boundary[simplex]
+                        radius_function[simplex] = min(radius_function[co_face] for co_face in co_faces)
+
         for simplex in alpha_complex.simplicial_complex.get_simplices_of_dim(0):
             radius_function[simplex] = 0.
 
         TimingUtils().stop("Rad :: Construct Radius Function")
         return radius_function
+
 
     @staticmethod
     def is_stack_empty_of_vertices(alpha_complex: CoreChromaticAlphaComplex, vertices, stack: StackOfSpheres) -> bool:
@@ -63,6 +93,21 @@ class RadiusFunctionConstructor:
         split = ChromaticComplexUtils.split_simplex_by_labels(simplex, alpha_complex.internal_labeling)
         labels, vertex_sets = zip(*split.items())
         point_sets = [alpha_complex.points[vertex_set] for vertex_set in vertex_sets]
+        center, radii = RadiusFunctionConstructor.find_smallest_circumstack(*point_sets)
+        circumstack = StackOfSpheres(center, {lab: rad for lab, rad in zip(labels, radii)})
+        return circumstack
+
+    @staticmethod
+    def prepare_raw_data(alpha_complex: CoreChromaticAlphaComplex,
+                                             simplex: tuple) -> tuple:
+        split = ChromaticComplexUtils.split_simplex_by_labels(simplex, alpha_complex.internal_labeling)
+        labels, vertex_sets = zip(*split.items())
+        point_sets = [alpha_complex.points[vertex_set] for vertex_set in vertex_sets]
+        return labels, point_sets
+
+    @staticmethod
+    def find_smallest_circumstack_of_point_set(labels: list,
+                                                point_sets: list[npt.NDArray]) -> StackOfSpheres:
         center, radii = RadiusFunctionConstructor.find_smallest_circumstack(*point_sets)
         circumstack = StackOfSpheres(center, {lab: rad for lab, rad in zip(labels, radii)})
         return circumstack

@@ -6,7 +6,7 @@ from chromatic_tda.entities.simplicial_complex import SimplicialComplex
 
 class ChromaticAlphaComplex:
 
-    def __init__(self, points, labels, lift_perturbation=1e-9, point_perturbation=None, **kwargs) -> None:
+    def __init__(self, points, labels, lift_perturbation=1e-9, point_perturbation=None, multi_process=0, **kwargs) -> None:
         """Create an instance of ChromaticAlphaComplex. The object contains the full chromatic Delaunay complex together
         with its alpha radius function.
 
@@ -33,7 +33,7 @@ class ChromaticAlphaComplex:
         else:
             factory = CoreChromaticAlphaComplexFactory(points, labels)
         self.core_alpha_complex : CoreChromaticAlphaComplex = factory.create_instance(
-            lift_perturbation=lift_perturbation, point_perturbation=point_perturbation)
+            lift_perturbation=lift_perturbation, point_perturbation=point_perturbation, multi_process=multi_process)
 
     def __iter__(self):
         yield from self.core_alpha_complex
